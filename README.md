@@ -10,6 +10,13 @@ This API is available via
 
 Turns Z-Wave nodes off and on on schedule. See [the example config](cmd/schedule/config.json.example).
 
+## ensure-config
+
+Periodically refreshes Z-Wave node configurations.
+
+Useful for making network configuration declarative, and for resetting nodes
+that lose their configuration after power loss.
+
 # Legal
 
 Copyright 2022 Mikhail Gusarov.

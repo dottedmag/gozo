@@ -1,0 +1,13 @@
+{
+  "zwaveJSAPIEndpoint": "ws://localhost:3000",
+  "nodes": [
+    {
+      "id": 2,
+      "description": "some node",
+      "params": [
+        {"number": 1, "int_value": 42, "description": "right anwser"},
+        {"number": 2, "hex_value": "00ff00ff", "description": "color in RGB"}
+      ]
+    }
+  ]
+}

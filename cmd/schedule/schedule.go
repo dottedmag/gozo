@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"github.com/dottedmag/gozo"
 )
 
 type config struct {
@@ -131,7 +133,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c, err := newConn(config.ZWaveJSAPIEndpoint)
+	c, err := gozo.NewConn(config.ZWaveJSAPIEndpoint)
 	if err != nil {
 		// TODO (dottedmag): Handle zwave-js API endpoint reconnections
 		log.Printf("FATAL: Failed to connect to zwave-js API endpoint %s: %v", config.ZWaveJSAPIEndpoint, err)
@@ -159,7 +161,7 @@ func main() {
 			}
 
 			// TODO (dottedmag): Recongnize manual manipulations, and back off
-			resp, err := c.call("endpoint.invoke_cc_api", map[string]any{
+			resp, err := c.Call("endpoint.invoke_cc_api", map[string]any{
 				"nodeId":       id,
 				"commandClass": 0x25, // binary switch
 				"methodName":   "set",
@@ -174,8 +176,8 @@ func main() {
 
 			// TODO (dottedmag): Recongnize "node is offline", and use different scheduling algorithm
 			// (offline nodes are likely to stay offline for a while, as they are probably just unplugged)
-			if resp.params["success"] == nil || !resp.params["success"].(bool) {
-				log.Printf("ERR: Failed to transition %d (%s) %v->%v: %#v", id, node.description, nodesCurrentStates[id], expected, resp.params)
+			if resp["success"] == nil || !resp["success"].(bool) {
+				log.Printf("ERR: Failed to transition %d (%s) %v->%v: %#v", id, node.description, nodesCurrentStates[id], expected, resp)
 				anyFailed = true
 				continue
 			}

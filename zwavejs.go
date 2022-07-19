@@ -1,4 +1,4 @@
-package main
+package gozo
 
 import (
 	"encoding/json"
@@ -19,20 +19,16 @@ type request struct {
 	params  map[string]any
 }
 
-type response struct {
-	params map[string]any
-}
-
-type conn struct {
+type Conn struct {
 	c        *websocket.Conn
 	mu       sync.Mutex
 	nextID   int
-	handlers map[int]chan<- response
+	handlers map[int]chan<- map[string]any
 
 	reqs chan request
 }
 
-func newConn(url string) (*conn, error) {
+func NewConn(url string) (*Conn, error) {
 	c, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return nil, err
@@ -51,9 +47,9 @@ func newConn(url string) (*conn, error) {
 		return nil, err
 	}
 
-	conn := &conn{
+	conn := &Conn{
 		c:        c,
-		handlers: map[int]chan<- response{},
+		handlers: map[int]chan<- map[string]any{},
 		reqs:     make(chan request, 100),
 	}
 
@@ -64,18 +60,18 @@ func newConn(url string) (*conn, error) {
 		must.OK(conn.runRead())
 	}()
 
-	resp, err := conn.call("set_api_schema", map[string]any{"schemaVersion": handshake.MaxSchemaVersion})
+	resp, err := conn.Call("set_api_schema", map[string]any{"schemaVersion": handshake.MaxSchemaVersion})
 	if err != nil {
 		return nil, err
 	}
-	if resp.params["success"] == nil || !resp.params["success"].(bool) {
+	if resp["success"] == nil || !resp["success"].(bool) {
 		return nil, fmt.Errorf("failed to set API schema")
 	}
 
 	return conn, nil
 }
 
-func (c *conn) runWrite() error {
+func (c *Conn) runWrite() error {
 	for {
 		req := <-c.reqs
 		bb := map[string]any{}
@@ -93,7 +89,7 @@ func (c *conn) runWrite() error {
 	}
 }
 
-func (c *conn) runRead() error {
+func (c *Conn) runRead() error {
 	for {
 		_, data, err := c.c.ReadMessage()
 		if err != nil {
@@ -121,7 +117,7 @@ func (c *conn) runRead() error {
 
 			var resp map[string]any
 			must.OK(json.Unmarshal(data, &resp))
-			resCh <- response{params: resp}
+			resCh <- resp
 		case "event":
 			// ignored
 		default:
@@ -130,8 +126,8 @@ func (c *conn) runRead() error {
 	}
 }
 
-func (c *conn) call(command string, params map[string]any) (response, error) {
-	resCh := make(chan response, 1)
+func (c *Conn) Call(command string, params map[string]any) (map[string]any, error) {
+	resCh := make(chan map[string]any, 1)
 
 	c.mu.Lock()
 	id := c.nextID
@@ -151,6 +147,6 @@ func (c *conn) call(command string, params map[string]any) (response, error) {
 	case res := <-resCh:
 		return res, nil
 	case <-time.After(10 * time.Second):
-		return response{}, errors.New("timed out waiting for response")
+		return nil, errors.New("timed out waiting for response")
 	}
 }

@@ -25,10 +25,12 @@ type Conn struct {
 	nextID   int
 	handlers map[int]chan<- map[string]any
 
+	eventHandler func(map[string]interface{})
+
 	reqs chan request
 }
 
-func NewConn(url string) (*Conn, error) {
+func NewConn(url string, eventHandler func(map[string]interface{})) (*Conn, error) {
 	c, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return nil, err
@@ -48,9 +50,10 @@ func NewConn(url string) (*Conn, error) {
 	}
 
 	conn := &Conn{
-		c:        c,
-		handlers: map[int]chan<- map[string]any{},
-		reqs:     make(chan request, 100),
+		c:            c,
+		handlers:     map[int]chan<- map[string]any{},
+		reqs:         make(chan request, 100),
+		eventHandler: eventHandler,
 	}
 
 	go func() {
@@ -66,6 +69,14 @@ func NewConn(url string) (*Conn, error) {
 	}
 	if resp["success"] == nil || !resp["success"].(bool) {
 		return nil, fmt.Errorf("failed to set API schema")
+	}
+
+	resp, err = conn.Call("start_listening", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp["success"] == nil || !resp["success"].(bool) {
+		return nil, fmt.Errorf("failed to start listening to events")
 	}
 
 	return conn, nil
@@ -99,6 +110,7 @@ func (c *Conn) runRead() error {
 		var msg struct {
 			Type      string
 			MessageID int
+			Event     map[string]interface{}
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
 			return err
@@ -119,6 +131,11 @@ func (c *Conn) runRead() error {
 			must.OK(json.Unmarshal(data, &resp))
 			resCh <- resp
 		case "event":
+			if c.eventHandler == nil {
+				panic(fmt.Errorf("event received with nil eventHandler"))
+			} else {
+				c.eventHandler(msg.Event)
+			}
 			// ignored
 		default:
 			panic(fmt.Errorf("unexpected message %#v", msg))

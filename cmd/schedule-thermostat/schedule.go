@@ -155,17 +155,18 @@ func main() {
 				continue
 			}
 
-			var targetValue bool
+			targetValue := 0
 			if expected == on {
-				targetValue = true
+				targetValue = 1
 			}
 
 			// TODO (dottedmag): Recongnize manual manipulations, and back off
 			resp, err := c.Call("endpoint.invoke_cc_api", map[string]any{
 				"nodeId":       id,
-				"commandClass": 0x25, // binary switch
+				"endpoint":     1,
+				"commandClass": 0x40, // thermostat mode
 				"methodName":   "set",
-				"args":         []bool{targetValue},
+				"args":         []int{targetValue},
 			})
 
 			if err != nil {

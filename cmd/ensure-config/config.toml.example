@@ -1,0 +1,19 @@
+zwavejs_api_endpoint = "ws://10.0.10.1:3000"
+
+[[device_type]]
+name = "zw111"
+description = "Aeotec Nano Dimmer"
+
+params = [
+       {id=120, description="switch 1 mode (3 = momentary)", default=3},
+       {id=121, description="switch 2 mode (3 = momentary)", default=3},
+]
+
+[[node]]
+id = 2
+device_type = "zw111"
+description = "Some dimmer"
+
+params = [
+       {id=120, value=2},
+]

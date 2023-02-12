@@ -1,38 +1,17 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/dottedmag/gozo"
+	"github.com/pelletier/go-toml/v2"
 )
 
-type config struct {
-	ZWaveJSAPIEndpoint string
-	Nodes              []configNode
-}
-
-type configNode struct {
-	ID          int
-	Description string
-	Params      []configParam
-}
-
-type configParam struct {
-	// TODO (dottedmag): Support "sub-parameters"
-	Number      int
-	IntValue    *uint   `json:"int_value"`
-	HexValue    *string `json:"hex_value"`
-	Description string
-}
-
-type node struct {
-	description string
-	params      map[int]param
+type deviceType struct {
+	paramsDescriptions  map[int]string
+	paramsDefaultValues map[int]*uint
 }
 
 type param struct {
@@ -40,37 +19,10 @@ type param struct {
 	value       uint
 }
 
-func parseConfig(c config) (map[int]node, error) {
-	out := map[int]node{}
-
-	for _, cn := range c.Nodes {
-		if _, ok := out[cn.ID]; ok {
-			return nil, fmt.Errorf("node %d is present multiple times in config", cn.ID)
-		}
-		params := map[int]param{}
-		for _, cp := range cn.Params {
-			if _, ok := params[cp.Number]; ok {
-				return nil, fmt.Errorf("parameter %d for node %d is present multiple times in config", cp.Number, cn.ID)
-			}
-			switch {
-			case cp.IntValue != nil && cp.HexValue != nil:
-				return nil, fmt.Errorf("parameter %d for node %d has both int and hex values", cp.Number, cn.ID)
-			case cp.IntValue != nil:
-				params[cp.Number] = param{description: cp.Description, value: *cp.IntValue}
-			case cp.HexValue != nil:
-				u, err := strconv.ParseUint(*cp.HexValue, 16, 32)
-				if err != nil {
-					return nil, fmt.Errorf("parameter %d for node %d hex value %q is malformed: %v", cp.Number, cn.ID, *cp.HexValue, err)
-				}
-				params[cp.Number] = param{description: cp.Description, value: uint(u)}
-			default:
-				return nil, fmt.Errorf("parameter %d for node %d does not have any value in config", cp.Number, cn.ID)
-			}
-		}
-		out[cn.ID] = node{description: cn.Description, params: params}
-	}
-
-	return out, nil
+type node struct {
+	id          int
+	description string
+	params      map[int]param
 }
 
 func main() {
@@ -87,10 +39,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	dec := json.NewDecoder(fh)
-	dec.DisallowUnknownFields()
-
 	var config config
+	dec := toml.NewDecoder(fh)
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(&config); err != nil {
 		log.Printf("FATAL: Failed to parse config file %s: %v", os.Args[1], err)
 		os.Exit(1)
@@ -102,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c, err := gozo.NewConn(config.ZWaveJSAPIEndpoint)
+	c, err := gozo.NewConn(config.ZWaveJSAPIEndpoint, func(m map[string]interface{}) {})
 	if err != nil {
 		// TODO (dottedmag): Handle zwave-js API endpoint reconnections
 		log.Printf("FATAL: Failed to connect to zwave-js API endpoint %s: %v", config.ZWaveJSAPIEndpoint, err)
@@ -114,11 +65,35 @@ func main() {
 	}
 
 	for {
-		var anyFailed bool
+		var anyFailed, anyDead bool
 
 		for id, node := range nodes {
+			log.Printf("INFO: Handling node %d", id)
+
+			resp, err := c.Call("node.get_state", map[string]any{
+				"nodeId": id,
+			})
+
+			if err != nil {
+				log.Printf("ERR: failed to query state of node %d (%s): %v", id, node.description, err)
+				anyFailed = true
+				continue
+			}
+
+			if resp["success"] == nil || !resp["success"].(bool) {
+				log.Printf("ERR: failed to query state of node %d (%s): %v", id, node.description, resp)
+				anyFailed = true
+				continue
+			}
+
+			if resp["result"].(map[string]any)["state"].(map[string]any)["status"].(float64) == 3 {
+				log.Printf("INFO: Node %d (%s) is dead", id, node.description)
+				anyDead = true
+				continue
+			}
+
 			for n, param := range node.params {
-				resp, err := c.Call("node.poll_value", map[string]any{
+				resp, err := c.Call("node.get_value", map[string]any{
 					"nodeId": id,
 					"valueId": map[string]any{
 						"commandClass": 0x70, // Configuration CC
@@ -132,15 +107,22 @@ func main() {
 					continue
 				}
 
-				// TODO (dottedmag): Recongnize "node is offline", and use different scheduling algorithm
-				// (offline nodes are likely to stay offline for a while, as they are probably just unplugged)
 				if resp["success"] == nil || !resp["success"].(bool) {
 					log.Printf("ERR: Failed to obtain current value %d (%s) %d (%s): %#v", id, node.description, n, param.description, resp)
 					anyFailed = true
 					continue
 				}
 
-				value := uint(resp["result"].(map[string]any)["value"].(float64))
+				// fmt.Printf("nodeId=%d property=%d %#v\n", id, n, resp)
+
+				anyValue := resp["result"].(map[string]any)["value"]
+				if anyValue == nil {
+					log.Printf("ERR: Empty current value %d (%s) %d (%s): %#v", id, node.description, n, param.description, resp)
+					anyFailed = true
+					continue
+				}
+
+				value := uint(anyValue.(float64))
 
 				if value != param.value {
 					resp, err := c.Call("node.set_value", map[string]any{
@@ -168,8 +150,6 @@ func main() {
 
 					log.Printf("INFO: Set value %d (%s) %d (%s) %v->%v", id, node.description, n, param.description, value, param.value)
 				}
-
-				time.Sleep(2 * time.Second) // Some delay between parameters to avoid hogging bandwith
 			}
 
 			time.Sleep(10 * time.Second) // Some delay between nodes to avoid hogging bandwith
@@ -178,6 +158,8 @@ func main() {
 
 		if anyFailed {
 			time.Sleep(10 * time.Second)
+		} else if anyDead {
+			time.Sleep(5 * time.Minute)
 		} else {
 			// TODO (dottedmag): Increase precision of scheduling
 			time.Sleep(5 * time.Minute)

@@ -127,6 +127,7 @@ func (c *Conn) runRead() error {
 				continue
 			}
 
+			//fmt.Printf("%s\n", data)
 			var resp map[string]any
 			must.OK(json.Unmarshal(data, &resp))
 			resCh <- resp

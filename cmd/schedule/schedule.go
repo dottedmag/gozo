@@ -1,31 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/dottedmag/gozo"
+	"github.com/pelletier/go-toml/v2"
 )
-
-type config struct {
-	ZWaveJSAPIEndpoint string
-	Nodes              []configNode
-}
-
-type configNode struct {
-	ID          int
-	Description string
-	Schedule    []configScheduleEvent
-}
-
-type configScheduleEvent struct {
-	At string
-	On bool
-}
 
 type node struct {
 	description string
@@ -35,40 +17,6 @@ type node struct {
 type scheduleEvent struct {
 	at    time.Time
 	state state
-}
-
-func parseConfig(c config) (map[int]node, error) {
-	out := map[int]node{}
-
-	for _, cn := range c.Nodes {
-		if _, ok := out[cn.ID]; ok {
-			return nil, fmt.Errorf("node %d is present multiple times in config", cn.ID)
-		}
-		var events []scheduleEvent
-		for _, cev := range cn.Schedule {
-			t, err := time.Parse("15:04:05", cev.At)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse time %q: %v", cev.At, err)
-			}
-			var state state
-			if cev.On {
-				state = on
-			} else {
-				state = off
-			}
-			events = append(events, scheduleEvent{at: t, state: state})
-		}
-		sort.Slice(events, func(i, j int) bool {
-			return events[i].at.Before(events[j].at)
-		})
-
-		out[cn.ID] = node{
-			description: cn.Description,
-			schedule:    events,
-		}
-	}
-
-	return out, nil
 }
 
 func nsOfDay(t time.Time) int64 {
@@ -118,10 +66,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	dec := json.NewDecoder(fh)
-	dec.DisallowUnknownFields()
-
 	var config config
+	dec := toml.NewDecoder(fh)
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(&config); err != nil {
 		log.Printf("FATAL: Failed to parse config file %s: %v", os.Args[1], err)
 		os.Exit(1)

@@ -1,0 +1,12 @@
+zwavejs_api_endpoint = "ws://localhost:3000"
+
+[[node]]
+id = 2
+description = "some switch"
+
+schedule = [
+	 {at="06:00:00", on=true},
+	 {at="06:20:00", on=false},
+	 {at="23:00:00", on=true},
+	 {at="23:20:00", on=false},
+]

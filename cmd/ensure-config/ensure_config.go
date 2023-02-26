@@ -68,6 +68,8 @@ func main() {
 		var anyFailed, anyDead bool
 
 		for id, node := range nodes {
+			var anyChange bool
+
 			log.Printf("INFO: Handling node %d", id)
 
 			resp, err := c.Call("node.get_state", map[string]any{
@@ -113,8 +115,6 @@ func main() {
 					continue
 				}
 
-				// fmt.Printf("nodeId=%d property=%d %#v\n", id, n, resp)
-
 				anyValue := resp["result"].(map[string]any)["value"]
 				if anyValue == nil {
 					log.Printf("ERR: Empty current value %d (%s) %d (%s): %#v", id, node.description, n, param.description, resp)
@@ -125,6 +125,8 @@ func main() {
 				value := uint(anyValue.(float64))
 
 				if value != param.value {
+					anyChange = true
+
 					resp, err := c.Call("node.set_value", map[string]any{
 						"nodeId": id,
 						"valueId": map[string]any{
@@ -152,11 +154,13 @@ func main() {
 				}
 			}
 
-			time.Sleep(10 * time.Second) // Some delay between nodes to avoid hogging bandwith
-
+			if anyChange {
+				time.Sleep(10 * time.Second) // Some delay between nodes to avoid hogging bandwith
+			}
 		}
 
 		if anyFailed {
+			log.Printf("INFO: Handling of some nodes was unsuccessful, retrying in 10 seconds")
 			time.Sleep(10 * time.Second)
 		} else if anyDead {
 			time.Sleep(5 * time.Minute)

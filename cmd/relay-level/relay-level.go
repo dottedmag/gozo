@@ -89,7 +89,11 @@ func realMain() int {
 	must.OK(c.AwaitConnection(ctx))
 
 	brightnessChange := func(dimmer string, delta int) {
-		nextBrightness := min(dimmers[dimmer].MaxBrightness, max(dimmers[dimmer].MinBrightness, dimmers[dimmer].Brightness+delta))
+		mb := dimmers[dimmer].MaxBrightness
+		if mb == 0 {
+			mb = 255
+		}
+		nextBrightness := min(mb, max(dimmers[dimmer].MinBrightness, dimmers[dimmer].Brightness+delta))
 		must.OK1(c.Publish(ctx, &paho.Publish{
 			Topic:   z2mBase + dimmer + "/set",
 			Payload: must.OK1(json.Marshal(tj.O{"state": "ON", "brightness": nextBrightness})),

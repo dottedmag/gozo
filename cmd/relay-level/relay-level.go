@@ -116,11 +116,13 @@ func realMain() int {
 	}
 
 	for dimmer := range dimmers {
+		dimmer := dimmer // rm when loopvar changes to default
 		router.RegisterHandler(z2mBase+dimmer, func(p *paho.Publish) {
 			must.OK(json.Unmarshal(p.Payload, dimmers[dimmer]))
 		})
 	}
 	for controller, dimmer := range controllers {
+		controller, dimmer := controller, dimmer // rm when loopvar changes to default
 		router.RegisterHandler(z2mBase+controller+"/action", func(p *paho.Publish) {
 			if dimmers[dimmer].State == "" { // haven't heard from dimmer yet
 				return

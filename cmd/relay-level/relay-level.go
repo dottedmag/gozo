@@ -89,6 +89,10 @@ func realMain() int {
 	must.OK(c.AwaitConnection(ctx))
 
 	brightnessChange := func(dimmer string, delta int) {
+		if dimmers[dimmer].State == "OFF" {
+			return
+		}
+
 		mb := dimmers[dimmer].MaxBrightness
 		if mb == 0 {
 			mb = 255

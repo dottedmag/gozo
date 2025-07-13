@@ -41,6 +41,7 @@ func realMain() int {
 		}
 		controllers[from] = to
 		dimmers[to] = &dimmerState{}
+		fmt.Printf("relaying %s to %s\n", from, to)
 	}
 
 	router := paho.NewStandardRouter()
@@ -90,6 +91,7 @@ func realMain() int {
 
 	brightnessChange := func(dimmer string, delta int) {
 		if dimmers[dimmer].State == "OFF" {
+			fmt.Printf("ignoring %s brightness change: turned off\n", dimmer)
 			return
 		}
 
@@ -98,6 +100,9 @@ func realMain() int {
 			mb = 255
 		}
 		nextBrightness := min(mb, max(dimmers[dimmer].MinBrightness, dimmers[dimmer].Brightness+delta))
+
+		fmt.Printf("changing %s brightness to %d\n", dimmer, nextBrightness)
+
 		must.OK1(c.Publish(ctx, &paho.Publish{
 			Topic:   z2mBase + dimmer + "/set",
 			Payload: must.OK1(json.Marshal(tj.O{"state": "ON", "brightness": nextBrightness})),
@@ -113,22 +118,31 @@ func realMain() int {
 			nextState = "OFF"
 		}
 
+		fmt.Printf("toggling %s to %s\n", dimmer, nextState)
+
 		must.OK1(c.Publish(ctx, &paho.Publish{
 			Topic:   z2mBase + dimmer + "/set",
 			Payload: must.OK1(json.Marshal(tj.O{"state": nextState})),
 		}))
 	}
 
+	fmt.Printf("connected to MQTT\n")
+
 	for dimmer := range dimmers {
 		dimmer := dimmer // rm when loopvar changes to default
+		fmt.Printf("registering updates for %s\n", dimmer)
 		router.RegisterHandler(z2mBase+dimmer, func(p *paho.Publish) {
 			must.OK(json.Unmarshal(p.Payload, dimmers[dimmer]))
+			fmt.Printf("update for dimmer %s: %s, brightness=%d\n", dimmer, dimmers[dimmer].State, dimmers[dimmer].Brightness)
 		})
 	}
 	for controller, dimmer := range controllers {
 		controller, dimmer := controller, dimmer // rm when loopvar changes to default
+		fmt.Printf("registering actions for %s\n", controller)
 		router.RegisterHandler(z2mBase+controller+"/action", func(p *paho.Publish) {
+			fmt.Printf("update for button %s: %s\n", controller, string(p.Payload))
 			if dimmers[dimmer].State == "" { // haven't heard from dimmer yet
+				fmt.Printf("ignoring update: haven't heard from dimmer %s yet\n", dimmer)
 				return
 			}
 			switch string(p.Payload) {

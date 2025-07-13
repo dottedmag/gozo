@@ -36,6 +36,7 @@ func realMain() int {
 		}
 		toInt := must.OK1(strconv.Atoi(to))
 		controllers[from] = toInt
+		fmt.Printf("relaying %s to %d\n", from, toInt)
 	}
 
 	zc, err := gozo.NewConn(zwaveJSAPIAddr, func(m map[string]any) {})
@@ -88,7 +89,6 @@ func realMain() int {
 	must.OK(c.AwaitConnection(ctx))
 
 	toggle := func(nodeID int) {
-		fmt.Printf("%s received toggle event\n", time.Now().Format(time.RFC3339Nano))
 		resp, err := zc.Call("node.get_value", map[string]any{
 			"nodeId": nodeID,
 			"valueId": map[string]any{
@@ -110,7 +110,8 @@ func realMain() int {
 		value := resp["result"].(map[string]any)["value"].(bool)
 		newValue := !value
 
-		fmt.Printf("%s sending new value\n", time.Now().Format(time.RFC3339Nano))
+		fmt.Printf("toggling %d to %v\n", nodeID, newValue)
+
 		resp, err = zc.Call("node.set_value", map[string]any{
 			"nodeId": nodeID,
 			"valueId": map[string]any{
@@ -120,12 +121,18 @@ func realMain() int {
 			},
 			"value": newValue,
 		})
-		fmt.Printf("%s sent new value\n", time.Now().Format(time.RFC3339Nano))
+
+		fmt.Printf("toggled %d to %v\n", nodeID, newValue)
+
+		if err != nil {
+			log.Printf("ERR: Failed to update: %v\n", err)
+		}
 	}
 
 	for controller, nanoswitch := range controllers {
 		controller, nanoswitch := controller, nanoswitch // rm when loopvar changes to default
 		router.RegisterHandler(z2mBase+controller+"/action", func(p *paho.Publish) {
+			fmt.Printf("update for button %s\n", controller)
 			switch string(p.Payload) {
 			case "single": // click
 				toggle(nanoswitch)

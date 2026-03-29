@@ -1,4 +1,5 @@
 zwavejs_api_endpoint = "ws://localhost:3000"
+timezone = "Europe/Berlin"
 
 [[node]]
 id = 2

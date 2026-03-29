@@ -15,28 +15,26 @@ type node struct {
 }
 
 type scheduleEvent struct {
-	at    time.Time
-	state state
+	hour, min, sec int
+	state          state
 }
 
-func nsOfDay(t time.Time) int64 {
-	return int64(t.Nanosecond()) +
-		1000000000*(int64(t.Second())+
-			60*(int64(t.Minute())+
-				60*int64(t.Hour())))
+func (e scheduleEvent) dayOffset() int {
+	return e.sec + 60*(e.min+60*e.hour)
 }
 
-func laterWithinDay(t1, t2 time.Time) bool {
-	return nsOfDay(t1) > nsOfDay(t2)
+func (e scheduleEvent) timeOn(now time.Time, loc *time.Location) time.Time {
+	local := now.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), e.hour, e.min, e.sec, 0, loc)
 }
 
-func expectedState(n node, time time.Time) state {
-	// if time is earlier than the first event in schedule, then
+func expectedState(n node, now time.Time, loc *time.Location) state {
+	// if now is earlier than the first event in schedule, then
 	// the right state is the last one (previous day) in schedule
 	lastState := n.schedule[len(n.schedule)-1].state
 
 	for _, event := range n.schedule {
-		if laterWithinDay(event.at, time) {
+		if now.Before(event.timeOn(now, loc)) {
 			return lastState
 		}
 		lastState = event.state
@@ -74,7 +72,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	nodes, err := parseConfig(config)
+	loc, nodes, err := parseConfig(config)
 	if err != nil {
 		log.Printf("FATAL: Failed to parse config file %s: %v", os.Args[1], err)
 		os.Exit(1)
@@ -97,7 +95,7 @@ func main() {
 		var anyFailed bool
 
 		for id, node := range nodes {
-			expected := expectedState(node, time.Now())
+			expected := expectedState(node, time.Now(), loc)
 			if nodesCurrentStates[id] == expected {
 				continue
 			}

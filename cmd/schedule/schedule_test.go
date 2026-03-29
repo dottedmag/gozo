@@ -5,20 +5,48 @@ import (
 	"time"
 )
 
-func TestNsOfDay(t *testing.T) {
-	tests := map[int64]time.Time{
-		0:             time.Date(0, time.January, 1, 0, 0, 0, 0, time.UTC),
-		1:             time.Date(0, time.January, 1, 0, 0, 0, 1, time.UTC),
-		1000000000:    time.Date(0, time.January, 1, 0, 0, 1, 0, time.UTC),
-		60000000000:   time.Date(0, time.January, 1, 0, 1, 0, 0, time.UTC),
-		3600000000000: time.Date(0, time.January, 1, 1, 0, 0, 0, time.UTC),
-		3660000000000: time.Date(1999, time.December, 30, 1, 1, 0, 0, time.UTC),
-		3661000000000: time.Date(1999, time.December, 30, 1, 1, 1, 0, time.UTC),
-		3661000000001: time.Date(1999, time.December, 30, 1, 1, 1, 1, time.UTC),
+func TestExpectedState(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for ns, tm := range tests {
-		if nsOfDay(tm) != ns {
-			t.Fail()
-		}
+
+	n := node{
+		description: "test",
+		schedule: []scheduleEvent{
+			{hour: 6, min: 0, sec: 0, state: on},
+			{hour: 22, min: 0, sec: 0, state: off},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		now      time.Time
+		expected state
+	}{
+		{
+			name:     "before first event",
+			now:      time.Date(2026, 3, 15, 5, 0, 0, 0, loc),
+			expected: off,
+		},
+		{
+			name:     "after first event",
+			now:      time.Date(2026, 3, 15, 12, 0, 0, 0, loc),
+			expected: on,
+		},
+		{
+			name:     "after second event",
+			now:      time.Date(2026, 3, 15, 23, 0, 0, 0, loc),
+			expected: off,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := expectedState(n, tt.now, loc)
+			if got != tt.expected {
+				t.Errorf("expectedState at %v = %v, want %v", tt.now, got, tt.expected)
+			}
+		})
 	}
 }

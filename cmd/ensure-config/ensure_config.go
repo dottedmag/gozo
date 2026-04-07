@@ -116,15 +116,16 @@ func main() {
 				}
 
 				anyValue := resp["result"].(map[string]any)["value"]
+				var vf bool
+				var value uint
 				if anyValue == nil {
 					log.Printf("ERR: Empty current value %d (%s) %d (%s): %#v", id, node.description, n, param.description, resp)
-					anyFailed = true
-					continue
+				} else {
+					vf = true
+					value = uint(anyValue.(float64))
 				}
 
-				value := uint(anyValue.(float64))
-
-				if value != param.value {
+				if !vf || value != param.value {
 					anyChange = true
 
 					resp, err := c.Call("node.set_value", map[string]any{

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"strings"
 	"testing"
 
@@ -107,5 +108,66 @@ func TestConnectionMetric(t *testing.T) {
 	setConnectionMetric(true)
 	if !strings.Contains(scrapeMetrics(), "zigbee_monitor_connected 1") {
 		t.Error("connected state was not exported")
+	}
+}
+
+func TestDeviceStateIgnoresAttributeTopics(t *testing.T) {
+	var logs bytes.Buffer
+	oldOutput := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(oldOutput) })
+
+	m := &monitor{}
+	t.Cleanup(func() { m.handleDeviceList(json.RawMessage(`[]`)) })
+
+	// Friendly names may contain slashes, so distinguish device and attribute
+	// topics using the inventory rather than rejecting every topic with a slash.
+	const name = "room/hall-dimmer"
+	attributes := []struct {
+		topic   string
+		payload string
+	}{
+		{"state", `"OFF"`},
+		{"brightness", `254`},
+		{"enabled", `false`},
+		{"type", `{"brightness":254}`},
+		{"unknown", `null`},
+		{"colors", `[1,2,3]`},
+	}
+	sendAttributes := func() {
+		for _, attr := range attributes {
+			m.handleDeviceState(name+"/"+attr.topic, json.RawMessage(attr.payload))
+		}
+	}
+
+	// Replayed attributes can precede bridge/devices, alongside real state.
+	m.handleDeviceState(name, json.RawMessage(`{"state":"ON","brightness":127}`))
+	sendAttributes()
+	m.handleDeviceList(json.RawMessage(`[
+		{"friendly_name":"room/hall-dimmer","ieee_address":"0x3333","type":"Router"}
+	]`))
+	sendAttributes()
+
+	if strings.Contains(logs.String(), "failed to parse state") {
+		t.Errorf("attribute messages produced parse errors:\n%s", &logs)
+	}
+	scrape := scrapeMetrics()
+	for _, want := range []string{
+		`zigbee_light_on{name="room/hall-dimmer", ieee="0x3333", property="state"} 1`,
+		`zigbee_brightness_level{name="room/hall-dimmer", ieee="0x3333", property="brightness"} 127`,
+	} {
+		if !strings.Contains(scrape, want) {
+			t.Errorf("missing %q after attribute messages:\n%s", want, scrape)
+		}
+	}
+	if len(m.values) != 1 || len(m.pending) != 0 {
+		t.Errorf("attribute topics retained as devices: values=%v pending=%v", m.values, m.pending)
+	}
+
+	// A malformed payload on a known device topic must still be reported.
+	logs.Reset()
+	m.handleDeviceState(name, json.RawMessage(`"OFF"`))
+	if !strings.Contains(logs.String(), "failed to parse state for "+name+":") {
+		t.Error("invalid state for a known device was silently ignored")
 	}
 }

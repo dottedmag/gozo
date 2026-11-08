@@ -228,13 +228,21 @@ func (m *monitor) applyStateLocked(name string, state map[string]any, receivedAt
 }
 
 func (m *monitor) handleDeviceState(name string, payload json.RawMessage) {
-	var state map[string]any
-	if err := json.Unmarshal(payload, &state); err != nil || state == nil {
-		log.Printf("failed to parse state for %s: %v", name, err)
-		return
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	_, known := m.devices[name]
+	if m.hasDeviceList && !known {
+		return
+	}
+
+	var state map[string]any
+	if err := json.Unmarshal(payload, &state); err != nil || state == nil {
+		// Before the inventory arrives, non-object payloads may be attribute replays.
+		if known {
+			log.Printf("failed to parse state for %s: %v", name, err)
+		}
+		return
+	}
 	if !m.hasDeviceList {
 		if m.pending == nil {
 			m.pending = make(map[string]pendingState)
@@ -246,9 +254,6 @@ func (m *monitor) handleDeviceState(name string, payload json.RawMessage) {
 		maps.Copy(pending.fields, state)
 		pending.receivedAt = time.Now()
 		m.pending[name] = pending
-		return
-	}
-	if _, exists := m.devices[name]; !exists {
 		return
 	}
 	m.applyStateLocked(name, state, time.Now())
